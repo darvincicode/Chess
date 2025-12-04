@@ -3,13 +3,12 @@ import { INITIAL_SETTINGS } from '../constants';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // --- SUPABASE CONFIGURATION ---
-// In a real app, these should be env vars. We will store them in localStorage for this demo
-// so the user can input them via UI.
 
 export const getSupabaseConfig = () => {
     return {
-        url: localStorage.getItem('sb_url') || '',
-        key: localStorage.getItem('sb_key') || ''
+        // Use provided credentials as default if not in localStorage
+        url: localStorage.getItem('sb_url') || 'https://ptyfpfcdmxfwyvkqixbb.supabase.co',
+        key: localStorage.getItem('sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0eWZwZmNkbXhmd3l2a3FpeGJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3NzYxMzMsImV4cCI6MjA4MDM1MjEzM30.iZfEQIIrIXfi5JnRvglXfgZ4gyNVuCXMgM2-r34LT0w'
     };
 };
 
@@ -192,7 +191,12 @@ class SupabaseStore implements IStore {
     private currentUser: User | null = null;
     
     constructor(url: string, key: string) {
-        this.client = createClient(url, key);
+        this.client = createClient(url, key, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+            }
+        });
     }
 
     async init() {
@@ -248,8 +252,9 @@ class SupabaseStore implements IStore {
             losses: 0
         };
 
+        // Try insert profile - ignore error if it already exists (e.g. via trigger)
         const { error: dbError } = await this.client.from('profiles').insert(newUser);
-        if (dbError) console.error("Profile creation error", dbError);
+        if (dbError) console.log("Profile insert info (might exist):", dbError.message);
 
         this.currentUser = newUser;
         return newUser;
@@ -271,7 +276,16 @@ class SupabaseStore implements IStore {
     }
 
     async updateUser(id: string, updates: Partial<User>): Promise<void> {
-        await this.client.from('profiles').update(updates).eq('id', id);
+        // Remove password from updates if it exists as it is handled by auth
+        const { password, ...safeUpdates } = updates;
+        
+        if (password) {
+            await this.client.auth.updateUser({ password: password });
+        }
+        
+        if (Object.keys(safeUpdates).length > 0) {
+            await this.client.from('profiles').update(safeUpdates).eq('id', id);
+        }
     }
 
     async createTransaction(tx: Omit<Transaction, 'id' | 'timestamp' | 'status'>): Promise<Transaction> {
