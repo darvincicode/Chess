@@ -165,17 +165,19 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
     
     // Highlight source square
     newOptionSquares[square] = {
-      background: 'rgba(255, 255, 0, 0.4)',
+      background: 'rgba(255, 255, 0, 0.5)',
     };
 
     // Highlight valid moves
     moves.forEach((move) => {
+      const isCapture = tempChess.get(move.to as any) && tempChess.get(move.to as any).color !== tempChess.get(square as any).color;
+      
       newOptionSquares[move.to] = {
-        background:
-          tempChess.get(move.to as any) && tempChess.get(move.to as any).color !== tempChess.get(square as any).color
-            ? 'radial-gradient(circle, rgba(255,0,0,.5) 25%, transparent 25%)' // Capture risk color
-            : 'radial-gradient(circle, rgba(0,0,0,.5) 25%, transparent 25%)', // Normal move dot
+        background: isCapture 
+            ? 'radial-gradient(circle, rgba(255, 80, 80, 0.7) 40%, transparent 40%)' // Reddish for capture
+            : 'radial-gradient(circle, rgba(100, 255, 100, 0.5) 25%, transparent 25%)', // Greenish for normal move
         borderRadius: '50%',
+        cursor: 'pointer'
       };
     });
     return newOptionSquares;
@@ -212,7 +214,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
                 return;
             }
         } catch (e) {
-            // Invalid move caught by chess.js
+            // Invalid move caught by chess.js, fall through to re-selection
         }
     }
 
