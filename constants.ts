@@ -15,4 +15,4 @@ export const GEMINI_MODEL_ID = 'gemini-2.5-flash';
 
 // Simulated delays
 export const AI_THINKING_TIME_MS = 1500;
-export const MATCHMAKING_TIMEOUT_MS = 60000; // 1 minute
+export const MATCHMAKING_TIMEOUT_MS = 5000; // Reduced to 5 seconds for instant play

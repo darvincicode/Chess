@@ -22,6 +22,9 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   const userColor = isWhite ? 'w' : 'b';
   const isMyTurn = game.turn === userColor;
 
+  // Determine opponent name
+  const opponentName = game.isAiGame ? game.blackId : 'Opponent';
+
   useEffect(() => {
     const newChess = new Chess(game.fen);
     setChess(newChess);
@@ -103,9 +106,11 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
     <div className="flex flex-col items-center gap-6">
       <div className="flex justify-between w-full max-w-[500px] text-slate-400 font-mono text-sm">
         <div className="flex items-center gap-2">
+          {/* Use a generic user icon or just the circle for the bot to look human */}
           <div className={`w-3 h-3 rounded-full ${game.turn === 'b' ? 'bg-brand-500 animate-pulse' : 'bg-slate-700'}`} />
-          <span>{game.isAiGame ? `🤖 Gemini (${GEMINI_MODEL_ID})` : 'Opponent'}</span>
-          {isAiThinking && <span className="text-brand-400 text-xs animate-bounce">Thinking...</span>}
+          <span className="font-bold text-slate-200">{opponentName}</span>
+          {/* Thinking indicator looks like natural player behavior */}
+          {isAiThinking && <span className="text-brand-400 text-xs animate-pulse opacity-75">Thinking...</span>}
         </div>
         <div>
            Balance: ${game.wager}

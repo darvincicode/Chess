@@ -8,6 +8,12 @@ import { User, GameSession, UserRole } from './types';
 import { store } from './services/store';
 import { STARTING_FEN, MATCHMAKING_TIMEOUT_MS } from './constants';
 
+const BOT_NAMES = [
+  "ChessViking99", "GrandRook_X", "PawnStormer", "TacticsTom", 
+  "BishopBlade", "KnightRider", "QueenSlayer", "DeepThinker", 
+  "OpeningOliver", "EndgameEvan", "CheckMateKing", "GambitGuru"
+];
+
 const App = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +57,9 @@ const App = () => {
 
   // Matchmaking Logic
   useEffect(() => {
-    if (isSearching && searchTimer > 60) {
+    // Convert ms to seconds for comparison
+    const timeoutSeconds = MATCHMAKING_TIMEOUT_MS / 1000;
+    if (isSearching && searchTimer >= timeoutSeconds) {
       startBotGame();
     }
   }, [searchTimer, isSearching]);
@@ -60,11 +68,14 @@ const App = () => {
     if (!user) return;
     setIsSearching(false);
     
+    // Pick a random human-like name
+    const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+
     const gameId = Math.random().toString(36).substr(2, 9);
     const newGame: GameSession = {
       id: gameId,
       whiteId: user.id,
-      blackId: 'AI_BOT',
+      blackId: botName, // Use the name as the ID for display
       wager: wager,
       fen: STARTING_FEN,
       turn: 'w',
@@ -117,14 +128,18 @@ const App = () => {
     const updatedGame = { ...activeGame, status: 'COMPLETED' as const, winnerId };
     setActiveGame(updatedGame);
 
+    // Logic: If winner is user, win. If winner is bot (blackId) in AI game, lose.
     if (winnerId === user.id) {
         await store.updateBalance(user.id, activeGame.wager * 2);
         alert("You Won! Prize credited.");
-    } else if (winnerId === 'AI_BOT') {
+    } else if (activeGame.isAiGame && winnerId === activeGame.blackId) {
         alert("You Lost! Wager lost.");
-    } else {
+    } else if (!winnerId) {
         await store.updateBalance(user.id, activeGame.wager);
         alert("Draw! Wager returned.");
+    } else {
+        // PvP logic would go here
+        alert("Game Over.");
     }
     await refreshUserData();
   };
@@ -185,7 +200,7 @@ const App = () => {
                  <div className="w-16 h-16 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
                  <h3 className="text-xl font-bold text-white mb-2">Searching for Opponent...</h3>
                  <p className="text-brand-400 font-mono text-lg">{searchTimer}s</p>
-                 <p className="text-slate-500 text-xs mt-4">If no player is found in 60s, a Gemini AI Bot will accept the challenge.</p>
+                 <p className="text-slate-500 text-xs mt-4">Connecting to matchmaking server...</p>
                  <button 
                    onClick={() => setIsSearching(false)}
                    className="mt-6 text-red-400 hover:text-red-300 underline text-sm"
