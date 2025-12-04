@@ -21,35 +21,44 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    // FIX: Supabase requires a valid email format. 
+    // If user types 'admin', we treat it as 'admin@gmchess.com'
+    let submitEmail = email.trim();
+    if (!submitEmail.includes('@')) {
+        submitEmail = `${submitEmail}@gmchess.com`;
+    }
+
     try {
         if (isLogin) {
-            const user = await store.login(email, password);
+            const user = await store.login(submitEmail, password);
             if (user) {
                 onLogin(user);
             } else {
-                alert("Invalid credentials or banned.");
+                alert("Login failed. If this is your first time, please switch to 'Sign Up' to create the account first.");
             }
         } else {
             // Check if user exists (logic inside store)
-            const user = await store.createUser(email, password, isAdminMode ? UserRole.ADMIN : UserRole.USER);
+            const user = await store.createUser(submitEmail, password, isAdminMode ? UserRole.ADMIN : UserRole.USER);
             if (user) {
                 onLogin(user);
             } else {
-                alert("Sign up failed or user exists.");
+                alert("Sign up failed. User might already exist.");
             }
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error(e);
-        alert("An error occurred");
+        alert("Authentication Error: " + (e.message || "Unknown error"));
     } finally {
         setLoading(false);
     }
   };
 
   const handleAdminFill = () => {
-    setEmail('admin');
+    // FIX: Pre-fill with the email format compatible with Supabase
+    setEmail('admin@gmchess.com');
     setPassword('123456');
-    setIsLogin(true);
+    setIsLogin(true); // Default to login, but user might need to switch to Sign Up if first time
   };
 
   const handleSaveConfig = () => {
@@ -150,6 +159,11 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
             >
                 <span>⚡</span> Admin Panel Access
             </button>
+            
+            {/* Helper text for the format fix */}
+            <p className="text-[10px] text-slate-700">
+               Note: 'admin' will be treated as 'admin@gmchess.com'
+            </p>
         </div>
       </div>
     </div>

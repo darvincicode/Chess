@@ -208,13 +208,48 @@ class SupabaseStore implements IStore {
 
     private async fetchCurrentUser(id: string) {
         const { data } = await this.client.from('profiles').select('*').eq('id', id).single();
-        if (data) this.currentUser = data;
+        if (data) {
+            this.currentUser = data;
+        } else {
+            // Profile missing (maybe deleted or failed creation). 
+            this.currentUser = null; 
+        }
     }
 
     async login(email: string, pass: string): Promise<User | null> {
         const { data, error } = await this.client.auth.signInWithPassword({ email, password: pass });
-        if (error || !data.user) return null;
+        
+        if (error || !data.user) {
+            console.error("Login Auth Error:", error);
+            return null;
+        }
+
+        // Try to fetch existing profile
         await this.fetchCurrentUser(data.user.id);
+
+        // RECOVERY: If Auth succeeded but no profile exists, create one now.
+        // This fixes the "User cannot access" issue if DB rows are missing.
+        if (!this.currentUser) {
+            console.log("Profile missing for authenticated user. Creating default profile...");
+            const recoveryUser: User = {
+                id: data.user.id,
+                email: email,
+                role: email.includes('admin') ? UserRole.ADMIN : UserRole.USER,
+                balance: 100,
+                isBanned: false,
+                wins: 0,
+                losses: 0
+            };
+            const { error: dbError } = await this.client.from('profiles').insert(recoveryUser);
+            if (!dbError) {
+                this.currentUser = recoveryUser;
+            } else {
+                console.error("Failed to create recovery profile:", dbError);
+                // We return null here to force the UI to show an error, as the app needs profile data
+                return null;
+            }
+        }
+        
         return this.currentUser;
     }
 
