@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Chess } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
 import { GameSession, User } from '../types';
-import { GEMINI_MODEL_ID, AI_THINKING_TIME_MS } from '../constants';
+import { AI_THINKING_TIME_MS } from '../constants';
 import { getBestMove } from '../services/geminiService';
 
 interface BoardProps {
@@ -49,17 +49,20 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   // Sync state with parent game object on load/update
   useEffect(() => {
     try {
-        const newChess = new Chess(game.fen);
-        setChess(newChess);
-        setFen(game.fen);
-        // Reset selection on external update
-        setSelectedSquare(null);
-        setOptionSquares({});
+        // Only update if FEN actually changed to avoid resetting local state during drag
+        if (game.fen !== fen) {
+            const newChess = new Chess(game.fen);
+            setChess(newChess);
+            setFen(game.fen);
+            setSelectedSquare(null);
+            setOptionSquares({});
+        }
         setWhiteTime(game.whiteTimeRemaining);
         setBlackTime(game.blackTimeRemaining);
     } catch (e) {
         console.error("Error updating board state:", e);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.fen, game.whiteTimeRemaining, game.blackTimeRemaining]);
 
   // Timer Tick Effect
@@ -102,23 +105,33 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
         setIsAiThinking(true);
         
         try {
-            // Artificial delay for realism
             await new Promise(r => setTimeout(r, AI_THINKING_TIME_MS));
 
+            // Use fresh instance for AI calculation
             const tempChess = new Chess(game.fen);
             const moves = tempChess.moves();
             
             if (moves.length === 0) {
-                handleGameOver(tempChess);
+                if (tempChess.isGameOver()) {
+                    handleGameOver(tempChess);
+                }
                 return;
             }
 
             const bestMove = await getBestMove(game.fen, moves);
             
             if (bestMove) {
-                const moveResult = tempChess.move(bestMove);
-                if (moveResult) {
-                    onMove(moveResult.san, tempChess.fen(), whiteTime, blackTime);
+                try {
+                    const moveResult = tempChess.move(bestMove);
+                    if (moveResult) {
+                        onMove(moveResult.san, tempChess.fen(), whiteTime, blackTime);
+                    }
+                } catch (e) {
+                    // Fallback to random if AI move is invalid
+                    console.warn("AI invalid move, falling back to random");
+                    const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                    tempChess.move(randomMove);
+                    onMove(randomMove, tempChess.fen(), whiteTime, blackTime);
                 }
             }
         } catch (e) {
@@ -133,7 +146,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.fen, game.turn, game.isAiGame, userColor]);
 
-  const handleGameOver = (chessInstance = chess) => {
+  const handleGameOver = (chessInstance: any) => {
     if (chessInstance.isCheckmate()) {
       onGameOver(chessInstance.turn() === 'w' ? 'black' : 'white', 'checkmate');
     } else if (chessInstance.isDraw() || chessInstance.isStalemate() || chessInstance.isThreefoldRepetition()) {
@@ -145,23 +158,30 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
 
   const makeMove = (sourceSquare: string, targetSquare: string): boolean => {
       try {
-        const tempChess = new Chess(game.fen);
+        // Use local state FEN to ensure immediate responsiveness
+        const tempChess = new Chess(fen);
         const move = tempChess.move({
             from: sourceSquare,
             to: targetSquare,
             promotion: 'q', 
         });
 
-        if (move === null) return false;
+        // chess.js 1.x throws on invalid move, but checking result just in case
+        if (!move) return false;
 
-        setFen(tempChess.fen());
-        onMove(move.san, tempChess.fen(), whiteTime, blackTime);
+        const newFen = tempChess.fen();
+        setFen(newFen); // Optimistic update
+        setChess(tempChess);
+        
+        // Notify parent
+        onMove(move.san, newFen, whiteTime, blackTime);
         
         if (tempChess.isGameOver()) {
             handleGameOver(tempChess);
         }
         return true;
       } catch (e) {
+          // Invalid moves (e.g. clicking invalid square) land here
           return false;
       }
   };
@@ -169,25 +189,23 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   const onDrop = (sourceSquare: string, targetSquare: string): boolean => {
     if (!isMyTurn || game.winnerId || isAiThinking) return false;
     
-    // Clear click selection if drag is used
     setSelectedSquare(null);
     setOptionSquares({});
 
     return makeMove(sourceSquare, targetSquare);
   };
 
-  // Click-to-Move Logic
   const onSquareClick = (square: string) => {
     if (!isMyTurn || game.winnerId || isAiThinking) return;
 
-    // 1. If we clicked the already selected square, unselect it
+    // 1. Unselect if clicking same square
     if (selectedSquare === square) {
         setSelectedSquare(null);
         setOptionSquares({});
         return;
     }
 
-    // 2. If we have a source square selected, try to move to the new square
+    // 2. Attempt Move
     if (selectedSquare) {
         const success = makeMove(selectedSquare, square);
         if (success) {
@@ -195,32 +213,39 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
             setOptionSquares({});
             return;
         }
-        // If move failed, we might be clicking another one of our pieces to switch selection
+        // If move failed, proceed to select new piece (if applicable)
     }
 
-    // 3. Select a piece
-    const piece = chess.get(square as any);
-    if (piece && piece.color === (isWhite ? 'w' : 'b')) {
-        setSelectedSquare(square);
-        
-        const moves = chess.moves({ square: square as any, verbose: true });
-        const newOptions: Record<string, any> = {};
-        
-        // Highlight source
-        newOptions[square] = { background: 'rgba(255, 255, 0, 0.4)' };
+    // 3. Select Piece
+    try {
+        // Use local chess instance to check piece ownership
+        const piece = chess.get(square as any);
+        if (piece && piece.color === userColor) {
+            setSelectedSquare(square);
+            
+            const moves = chess.moves({ square: square as any, verbose: true });
+            const newOptions: Record<string, any> = {};
+            
+            // Highlight source
+            newOptions[square] = { background: 'rgba(255, 255, 0, 0.4)' };
 
-        // Highlight destinations
-        moves.forEach((move) => {
-            newOptions[move.to] = {
-                background: chess.get(move.to as any) 
-                    ? 'radial-gradient(circle, rgba(255,0,0,.5) 25%, transparent 25%)' 
-                    : 'radial-gradient(circle, rgba(0,0,0,.5) 25%, transparent 25%)',
-                borderRadius: '50%'
-            };
-        });
-        setOptionSquares(newOptions);
-    } else {
-        // Clicked empty square or opponent piece without selection -> clear
+            // Highlight destinations
+            moves.forEach((move: any) => {
+                newOptions[move.to] = {
+                    background: chess.get(move.to as any) 
+                        ? 'radial-gradient(circle, rgba(255,0,0,.5) 25%, transparent 25%)' 
+                        : 'radial-gradient(circle, rgba(0,0,0,.5) 25%, transparent 25%)',
+                    borderRadius: '50%'
+                };
+            });
+            setOptionSquares(newOptions);
+        } else {
+            // Clicked empty square or opponent -> clear
+            setSelectedSquare(null);
+            setOptionSquares({});
+        }
+    } catch(e) {
+        console.error("Selection error:", e);
         setSelectedSquare(null);
         setOptionSquares({});
     }
@@ -242,7 +267,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
           }
       </div>
 
-      {/* Opponent Info (Top) */}
+      {/* Opponent Info */}
       <div className={`flex justify-between items-center w-full max-w-[500px] p-3 rounded-lg border ${!isWhiteTurn ? 'border-brand-500 bg-brand-900/10' : 'border-slate-800 bg-dark-800'}`}>
         <div className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${game.turn === (isWhite ? 'b' : 'w') ? 'bg-brand-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
@@ -259,9 +284,9 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
       </div>
 
       {/* Board */}
-      {/* touch-action: none is CRITICAL for mobile drag support */}
       <div className="w-full max-w-[500px] aspect-square shadow-2xl shadow-brand-900/20 border-4 border-slate-700 rounded-lg overflow-hidden bg-dark-800 relative" style={{ touchAction: 'none' }}>
         <Chessboard 
+          id="BasicBoard"
           position={fen} 
           onPieceDrop={onDrop}
           onSquareClick={onSquareClick}
@@ -269,17 +294,15 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
           boardOrientation={isWhite ? 'white' : 'black'}
           customDarkSquareStyle={{ backgroundColor: '#1e293b' }}
           customLightSquareStyle={{ backgroundColor: '#475569' }}
-          arePiecesDraggable={!game.winnerId} 
+          arePiecesDraggable={!game.winnerId && isMyTurn} 
           animationDuration={200}
         />
-        
-        {/* Helper overlay for turn state */}
         {!isMyTurn && !game.winnerId && (
-            <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+            <div className="absolute inset-0 bg-black/10 z-10" />
         )}
       </div>
 
-      {/* User Info (Bottom) */}
+      {/* User Info */}
       <div className={`flex justify-between items-center w-full max-w-[500px] p-3 rounded-lg border ${isWhiteTurn ? 'border-brand-500 bg-brand-900/10' : 'border-slate-800 bg-dark-800'}`}>
         <div className="flex items-center gap-3">
              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${game.turn === (isWhite ? 'w' : 'b') ? 'bg-brand-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
