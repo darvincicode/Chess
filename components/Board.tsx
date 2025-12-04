@@ -303,7 +303,9 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
                 {currentUser.email.charAt(0).toUpperCase()}
             </div>
             <div>
-                <div className="font-bold text-slate-200 text-sm">You</div>
+                <div className="font-bold text-slate-200 text-sm">
+                    You <span className="text-xs font-normal text-slate-400">({isWhite ? 'White' : 'Black'})</span>
+                </div>
                 <div className="text-xs text-brand-400 font-mono">${game.wager} Pot</div>
             </div>
         </div>

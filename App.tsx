@@ -74,9 +74,11 @@ const App = () => {
     const timeInMs = selectedTime * 60 * 1000;
 
     // Randomize sides (50/50 chance to be White or Black)
-    const userIsWhite = Math.random() > 0.5;
-    const whiteId = userIsWhite ? user.id : botName;
-    const blackId = userIsWhite ? botName : user.id;
+    const isPlayerWhite = Math.random() < 0.5;
+    const whiteId = isPlayerWhite ? user.id : botName;
+    const blackId = isPlayerWhite ? botName : user.id;
+
+    console.log(`Starting game against bot. Player is ${isPlayerWhite ? 'White' : 'Black'}`);
 
     const gameId = Math.random().toString(36).substr(2, 9);
     const newGame: GameSession = {
