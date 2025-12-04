@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, UserRole } from '../types';
-import { store } from '../services/store';
+import { store, saveSupabaseConfig, getSupabaseConfig } from '../services/store';
 
 interface AuthFormProps {
   onLogin: (user: User) => void;
@@ -10,26 +10,39 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isAdminMode, setIsAdminMode] = useState(false); // For demo purposes
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  const [showSettings, setShowSettings] = useState(false);
+  const sbConfig = getSupabaseConfig();
+  const [sbUrl, setSbUrl] = useState(sbConfig.url);
+  const [sbKey, setSbKey] = useState(sbConfig.key);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLogin) {
-      const user = store.login(email, password);
-      if (user) {
-        onLogin(user);
-      } else {
-        alert("Invalid credentials or banned.");
-      }
-    } else {
-      // Check if user exists
-      const existing = store.getUsers().find(u => u.email === email);
-      if (existing) {
-        alert("User already exists");
-        return;
-      }
-      const user = store.createUser(email, password, isAdminMode ? UserRole.ADMIN : UserRole.USER);
-      onLogin(user);
+    setLoading(true);
+    try {
+        if (isLogin) {
+            const user = await store.login(email, password);
+            if (user) {
+                onLogin(user);
+            } else {
+                alert("Invalid credentials or banned.");
+            }
+        } else {
+            // Check if user exists (logic inside store)
+            const user = await store.createUser(email, password, isAdminMode ? UserRole.ADMIN : UserRole.USER);
+            if (user) {
+                onLogin(user);
+            } else {
+                alert("Sign up failed or user exists.");
+            }
+        }
+    } catch (e) {
+        console.error(e);
+        alert("An error occurred");
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -39,9 +52,37 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
     setIsLogin(true);
   };
 
+  const handleSaveConfig = () => {
+      saveSupabaseConfig(sbUrl, sbKey);
+  };
+
+  if (showSettings) {
+      return (
+        <div className="min-h-screen bg-dark-950 flex items-center justify-center p-4">
+             <div className="bg-dark-900 border border-slate-800 p-8 rounded-2xl w-full max-w-md shadow-2xl">
+                <h2 className="text-xl font-bold mb-4">Supabase Configuration</h2>
+                <p className="text-xs text-slate-400 mb-4">Enter your Supabase URL and Anon Key to enable the persistent database. Clear them to use local mock mode.</p>
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-slate-500 text-xs font-bold">Supabase URL</label>
+                        <input value={sbUrl} onChange={e => setSbUrl(e.target.value)} className="w-full bg-dark-950 border border-slate-700 rounded p-2 text-white" />
+                    </div>
+                    <div>
+                        <label className="text-slate-500 text-xs font-bold">Supabase Anon Key</label>
+                        <input value={sbKey} onChange={e => setSbKey(e.target.value)} className="w-full bg-dark-950 border border-slate-700 rounded p-2 text-white" />
+                    </div>
+                    <button onClick={handleSaveConfig} className="w-full bg-brand-600 text-white py-2 rounded font-bold">Save & Reload</button>
+                    <button onClick={() => setShowSettings(false)} className="w-full text-slate-400 py-2">Cancel</button>
+                </div>
+             </div>
+        </div>
+      );
+  }
+
   return (
     <div className="min-h-screen bg-dark-950 flex items-center justify-center p-4">
       <div className="bg-dark-900 border border-slate-800 p-8 rounded-2xl w-full max-w-md shadow-2xl relative">
+        <button onClick={() => setShowSettings(true)} className="absolute top-4 right-4 text-slate-600 hover:text-white">⚙️</button>
         <h1 className="text-3xl font-black text-brand-500 mb-2 text-center">GM Chess</h1>
         <p className="text-slate-400 text-center mb-8">
           {isLogin ? 'Sign in to continue' : 'Create your challenger account'}
@@ -85,9 +126,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
 
           <button 
             type="submit"
-            className="w-full py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg shadow-lg shadow-brand-900/50 mt-4 transition-transform active:scale-95"
+            disabled={loading}
+            className="w-full py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg shadow-lg shadow-brand-900/50 mt-4 transition-transform active:scale-95 disabled:opacity-50"
           >
-            {isLogin ? 'Enter Arena' : 'Create Account'}
+            {loading ? 'Processing...' : (isLogin ? 'Enter Arena' : 'Create Account')}
           </button>
         </form>
 
@@ -102,7 +144,6 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
                 </button>
             </p>
 
-            {/* Admin Panel Access Link */}
             <button 
                 onClick={handleAdminFill}
                 className="text-xs text-slate-600 hover:text-brand-500 transition-colors flex items-center justify-center gap-1 mx-auto"

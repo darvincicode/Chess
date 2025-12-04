@@ -9,18 +9,31 @@ import { store } from './services/store';
 import { STARTING_FEN, MATCHMAKING_TIMEOUT_MS } from './constants';
 
 const App = () => {
-  const [user, setUser] = useState<User | null>(store.getCurrentUser());
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState<string>('lobby'); // lobby, game, wallet, admin, auth
   const [activeGame, setActiveGame] = useState<GameSession | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [wager, setWager] = useState(0.1);
   const [searchTimer, setSearchTimer] = useState(0);
 
-  // Load initial data
-  const refreshUserData = () => {
+  // Initialize
+  useEffect(() => {
+    store.init().then(() => {
+        store.getCurrentUser().then(u => {
+            setUser(u);
+            setLoading(false);
+        });
+    });
+  }, []);
+
+  // Refresh data helper
+  const refreshUserData = async () => {
     if (user) {
-      const updated = store.getUsers().find(u => u.id === user.id);
-      if (updated) setUser(updated);
+        // For local mock, getting current user is enough. For DB, we fetch fresh.
+        const users = await store.getUsers();
+        const updated = users.find(u => u.id === user.id);
+        if (updated) setUser(updated);
     }
   };
 
@@ -39,19 +52,18 @@ const App = () => {
   // Matchmaking Logic
   useEffect(() => {
     if (isSearching && searchTimer > 60) {
-      // 1 Minute passed -> Trigger AI Bot
       startBotGame();
     }
   }, [searchTimer, isSearching]);
 
-  const startBotGame = () => {
+  const startBotGame = async () => {
     if (!user) return;
     setIsSearching(false);
     
     const gameId = Math.random().toString(36).substr(2, 9);
     const newGame: GameSession = {
       id: gameId,
-      whiteId: user.id, // User is always white vs bot in this simple version
+      whiteId: user.id,
       blackId: 'AI_BOT',
       wager: wager,
       fen: STARTING_FEN,
@@ -62,9 +74,8 @@ const App = () => {
       lastMoveTimestamp: Date.now()
     };
     
-    // Deduct wager
-    store.updateBalance(user.id, -wager);
-    refreshUserData();
+    await store.updateBalance(user.id, -wager);
+    await refreshUserData();
     
     setActiveGame(newGame);
     setPage('game');
@@ -75,8 +86,8 @@ const App = () => {
     setPage('lobby');
   };
 
-  const handleLogout = () => {
-    store.logout();
+  const handleLogout = async () => {
+    await store.logout();
     setUser(null);
     setPage('auth');
   };
@@ -96,7 +107,7 @@ const App = () => {
     setActiveGame(updatedGame);
   };
 
-  const handleGameOver = (winnerColor: string | null) => {
+  const handleGameOver = async (winnerColor: string | null) => {
     if (!activeGame || !user) return;
     
     let winnerId: string | null = null;
@@ -106,19 +117,21 @@ const App = () => {
     const updatedGame = { ...activeGame, status: 'COMPLETED' as const, winnerId };
     setActiveGame(updatedGame);
 
-    // Distribute winnings (2x wager - fee implied, keeping it simple 2x)
     if (winnerId === user.id) {
-        store.updateBalance(user.id, activeGame.wager * 2);
+        await store.updateBalance(user.id, activeGame.wager * 2);
         alert("You Won! Prize credited.");
     } else if (winnerId === 'AI_BOT') {
         alert("You Lost! Wager lost.");
     } else {
-        // Draw
-        store.updateBalance(user.id, activeGame.wager);
+        await store.updateBalance(user.id, activeGame.wager);
         alert("Draw! Wager returned.");
     }
-    refreshUserData();
+    await refreshUserData();
   };
+
+  if (loading) {
+      return <div className="min-h-screen bg-dark-950 flex items-center justify-center text-brand-500">Loading...</div>;
+  }
 
   if (!user) {
     return <AuthForm onLogin={handleAuth} />;
@@ -203,16 +216,8 @@ const App = () => {
 
       {page === 'admin' && user.role === UserRole.ADMIN && (
         <AdminPanel 
-          users={store.getUsers()} 
-          transactions={store.getTransactions()} 
-          settings={store.getSettings()}
-          onUpdateSettings={(s) => { store.updateSettings(s); refreshUserData(); }}
-          onProcessTx={(id, approve) => { store.updateTransactionStatus(id, approve ? 'COMPLETED' : 'REJECTED'); refreshUserData(); }}
-          onBanUser={(id) => { 
-             const u = store.getUsers().find(x => x.id === id); 
-             if(u) store.updateUser(id, { isBanned: !u.isBanned }); 
-             refreshUserData(); 
-          }}
+          user={user}
+          refreshData={refreshUserData}
         />
       )}
     </Layout>

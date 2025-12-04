@@ -1,29 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Transaction, AdminSettings } from '../types';
 import { store } from '../services/store';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface AdminPanelProps {
-  users: User[];
-  transactions: Transaction[];
-  settings: AdminSettings;
-  onUpdateSettings: (s: AdminSettings) => void;
-  onProcessTx: (id: string, approve: boolean) => void;
-  onBanUser: (id: string) => void;
+  user: User; // Current admin user
+  refreshData: () => Promise<void>;
 }
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ 
-  users, transactions, settings, onUpdateSettings, onProcessTx, onBanUser 
-}) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ user, refreshData }) => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [settings, setSettings] = useState<AdminSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'finance' | 'settings'>('overview');
-  const [editSettings, setEditSettings] = useState<AdminSettings>(settings);
-  
-  // User Edit State
+  const [editSettings, setEditSettings] = useState<AdminSettings | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({ email: '', password: '', balance: 0 });
-
-  // Admin Profile State
   const [adminPass, setAdminPass] = useState('');
+
+  const loadAdminData = async () => {
+    setLoading(true);
+    const [u, t, s] = await Promise.all([
+        store.getUsers(),
+        store.getTransactions(),
+        store.getSettings()
+    ]);
+    setUsers(u);
+    setTransactions(t);
+    setSettings(s);
+    setEditSettings(s);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadAdminData();
+  }, []);
 
   // Stats
   const totalDeposits = transactions
@@ -38,19 +51,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     { name: 'Withdraws', amount: transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'COMPLETED').reduce((a,c) => a+c.amount,0) },
   ];
 
-  const handleSaveSettings = () => {
-    onUpdateSettings(editSettings);
-    // Also save admin password if changed
+  const handleSaveSettings = async () => {
+    if (!editSettings) return;
+    await store.updateSettings(editSettings);
     if (adminPass) {
-        const admin = store.getCurrentUser();
-        if (admin && admin.role === 'ADMIN') {
-            store.updateUser(admin.id, { password: adminPass });
-            alert("Settings & Admin Password Saved");
-        }
+        await store.updateUser(user.id, { password: adminPass });
+        alert("Settings & Admin Password Saved");
     } else {
         alert("Settings Saved");
     }
     setAdminPass('');
+    loadAdminData();
   };
 
   const startEditUser = (user: User) => {
@@ -58,20 +69,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setEditForm({ email: user.email, password: user.password || '', balance: user.balance });
   };
 
-  const saveUserEdit = () => {
+  const saveUserEdit = async () => {
     if (editingUser) {
-        store.updateUser(editingUser.id, {
+        await store.updateUser(editingUser.id, {
             email: editForm.email,
             password: editForm.password,
             balance: editForm.balance
         });
         setEditingUser(null);
-        // Force refresh via parent update usually, but local state might lag until refreshUserData called. 
-        // We rely on parent passing fresh users prop or we trigger a refresh somehow. 
-        // Ideally App should pass a refresher or we accept that stats update on next tick.
+        await loadAdminData();
         alert("User Updated");
     }
   };
+
+  const handleProcessTx = async (id: string, approve: boolean) => {
+      await store.updateTransactionStatus(id, approve ? 'COMPLETED' : 'REJECTED');
+      await loadAdminData();
+  };
+
+  const handleBanUser = async (id: string) => {
+      const u = users.find(x => x.id === id);
+      if(u) {
+          await store.updateUser(id, { isBanned: !u.isBanned });
+          await loadAdminData();
+      }
+  };
+
+  if (loading) return <div>Loading Admin Data...</div>;
 
   return (
     <div className="space-y-6">
@@ -157,7 +181,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <button onClick={() => startEditUser(u)} className="text-brand-400 hover:text-brand-300">Edit</button>
                             {u.role !== 'ADMIN' && (
                                 <button 
-                                    onClick={() => onBanUser(u.id)}
+                                    onClick={() => handleBanUser(u.id)}
                                     className="text-red-400 hover:text-red-300"
                                 >
                                     {u.isBanned ? 'Unban' : 'Ban'}
@@ -191,8 +215,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="text-xs text-slate-600 mt-1">{new Date(tx.timestamp).toLocaleString()}</div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => onProcessTx(tx.id, true)} className="px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm">Approve</button>
-                    <button onClick={() => onProcessTx(tx.id, false)} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-sm">Reject</button>
+                    <button onClick={() => handleProcessTx(tx.id, true)} className="px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm">Approve</button>
+                    <button onClick={() => handleProcessTx(tx.id, false)} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-sm">Reject</button>
                   </div>
                 </div>
               ))}
@@ -201,7 +225,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {activeTab === 'settings' && (
+      {activeTab === 'settings' && editSettings && (
         <div className="bg-dark-800 p-6 rounded-lg border border-slate-700 max-w-2xl">
           <h3 className="text-xl mb-4 font-bold">Payment Configuration</h3>
           <div className="space-y-4">

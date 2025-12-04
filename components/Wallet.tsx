@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Network, Transaction } from '../types';
 import { store } from '../services/store';
 
 interface WalletProps {
   user: User;
-  refreshData: () => void;
+  refreshData: () => Promise<void>;
 }
 
 export const Wallet: React.FC<WalletProps> = ({ user, refreshData }) => {
@@ -14,10 +14,18 @@ export const Wallet: React.FC<WalletProps> = ({ user, refreshData }) => {
   const [withdrawAddr, setWithdrawAddr] = useState('');
   const [error, setError] = useState('');
   
-  const settings = store.getSettings();
-  const transactions = store.getTransactions(user.id).sort((a,b) => b.timestamp - a.timestamp);
+  const [settings, setSettings] = useState<any>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  useEffect(() => {
+    store.getSettings().then(setSettings);
+    store.getTransactions(user.id).then(txs => {
+        setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
+    });
+  }, [user.id]);
 
   const getDepositAddress = () => {
+    if (!settings) return 'Loading...';
     switch (network) {
       case Network.TRC20: return settings.walletTrc20;
       case Network.ERC20: return settings.walletErc20;
@@ -26,8 +34,9 @@ export const Wallet: React.FC<WalletProps> = ({ user, refreshData }) => {
     }
   };
 
-  const handleTransaction = () => {
+  const handleTransaction = async () => {
     setError('');
+    if (!settings) return;
     
     if (activeTab === 'deposit') {
       if (amount < settings.minDeposit) {
@@ -35,7 +44,7 @@ export const Wallet: React.FC<WalletProps> = ({ user, refreshData }) => {
         return;
       }
       // Create mock pending deposit
-      store.createTransaction({
+      await store.createTransaction({
         userId: user.id,
         type: 'DEPOSIT',
         amount: amount,
@@ -51,7 +60,7 @@ export const Wallet: React.FC<WalletProps> = ({ user, refreshData }) => {
         setError("Insufficient funds.");
         return;
       }
-      store.createTransaction({
+      await store.createTransaction({
         userId: user.id,
         type: 'WITHDRAW',
         amount: amount,
@@ -61,8 +70,14 @@ export const Wallet: React.FC<WalletProps> = ({ user, refreshData }) => {
       alert("Withdraw request submitted.");
     }
     setAmount(0);
+    
+    // Refresh local lists
+    const txs = await store.getTransactions(user.id);
+    setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
     refreshData();
   };
+
+  if (!settings) return <div>Loading Wallet...</div>;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
