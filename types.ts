@@ -1,3 +1,4 @@
+
 export enum UserRole {
   USER = 'USER',
   ADMIN = 'ADMIN'
@@ -44,6 +45,11 @@ export interface GameSession {
   history: string[]; // SAN moves
   isAiGame: boolean;
   lastMoveTimestamp: number;
+  
+  // Time Controls
+  timeControlMinutes: number;
+  whiteTimeRemaining: number; // milliseconds
+  blackTimeRemaining: number; // milliseconds
 }
 
 export interface AdminSettings {

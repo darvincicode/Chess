@@ -6,7 +6,7 @@ import { Wallet } from './components/Wallet';
 import { AdminPanel } from './components/AdminPanel';
 import { User, GameSession, UserRole } from './types';
 import { store } from './services/store';
-import { STARTING_FEN, MATCHMAKING_TIMEOUT_MS } from './constants';
+import { STARTING_FEN, MATCHMAKING_TIMEOUT_MS, TIME_CONTROLS } from './constants';
 
 const BOT_NAMES = [
   "ChessViking99", "GrandRook_X", "PawnStormer", "TacticsTom", 
@@ -21,6 +21,7 @@ const App = () => {
   const [activeGame, setActiveGame] = useState<GameSession | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [wager, setWager] = useState(0.1);
+  const [selectedTime, setSelectedTime] = useState(10); // Default 10 min
   const [searchTimer, setSearchTimer] = useState(0);
 
   // Initialize
@@ -70,19 +71,23 @@ const App = () => {
     
     // Pick a random human-like name
     const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+    const timeInMs = selectedTime * 60 * 1000;
 
     const gameId = Math.random().toString(36).substr(2, 9);
     const newGame: GameSession = {
       id: gameId,
       whiteId: user.id,
-      blackId: botName, // Use the name as the ID for display
+      blackId: botName, 
       wager: wager,
       fen: STARTING_FEN,
       turn: 'w',
       status: 'ACTIVE',
       history: [],
       isAiGame: true,
-      lastMoveTimestamp: Date.now()
+      lastMoveTimestamp: Date.now(),
+      timeControlMinutes: selectedTime,
+      whiteTimeRemaining: timeInMs,
+      blackTimeRemaining: timeInMs
     };
     
     await store.updateBalance(user.id, -wager);
@@ -103,7 +108,7 @@ const App = () => {
     setPage('auth');
   };
 
-  const handleMove = (moveSan: string, newFen: string) => {
+  const handleMove = (moveSan: string, newFen: string, wTime: number, bTime: number) => {
     if (!activeGame || !user) return;
 
     const nextTurn = activeGame.turn === 'w' ? 'b' : 'w';
@@ -113,12 +118,14 @@ const App = () => {
       fen: newFen,
       turn: nextTurn,
       history: [...activeGame.history, moveSan],
-      lastMoveTimestamp: Date.now()
+      lastMoveTimestamp: Date.now(),
+      whiteTimeRemaining: wTime,
+      blackTimeRemaining: bTime
     };
     setActiveGame(updatedGame);
   };
 
-  const handleGameOver = async (winnerColor: string | null) => {
+  const handleGameOver = async (winnerColor: string | null, method?: string) => {
     if (!activeGame || !user) return;
     
     let winnerId: string | null = null;
@@ -128,15 +135,17 @@ const App = () => {
     const updatedGame = { ...activeGame, status: 'COMPLETED' as const, winnerId };
     setActiveGame(updatedGame);
 
+    const resultMethod = method ? ` (${method})` : '';
+
     // Logic: If winner is user, win. If winner is bot (blackId) in AI game, lose.
     if (winnerId === user.id) {
         await store.updateBalance(user.id, activeGame.wager * 2);
-        alert("You Won! Prize credited.");
+        alert(`You Won${resultMethod}! Prize credited.`);
     } else if (activeGame.isAiGame && winnerId === activeGame.blackId) {
-        alert("You Lost! Wager lost.");
+        alert(`You Lost${resultMethod}! Wager lost.`);
     } else if (!winnerId) {
         await store.updateBalance(user.id, activeGame.wager);
-        alert("Draw! Wager returned.");
+        alert(`Draw${resultMethod}! Wager returned.`);
     } else {
         // PvP logic would go here
         alert("Game Over.");
@@ -170,8 +179,9 @@ const App = () => {
 
           <div className="bg-dark-800 p-8 rounded-2xl border border-slate-700 w-full max-w-md shadow-2xl">
              {!isSearching ? (
-               <>
-                 <div className="mb-6">
+               <div className="space-y-6">
+                 {/* Wager Input */}
+                 <div>
                     <label className="text-sm text-slate-500 font-bold uppercase tracking-wider mb-2 block">Wager Amount (USDT)</label>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">$</span>
@@ -186,6 +196,22 @@ const App = () => {
                     </div>
                     {wager > user.balance && <p className="text-red-500 text-sm mt-2">Insufficient balance</p>}
                  </div>
+
+                 {/* Time Control Selector */}
+                 <div>
+                    <label className="text-sm text-slate-500 font-bold uppercase tracking-wider mb-2 block">Game Time</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        <select 
+                            value={selectedTime}
+                            onChange={(e) => setSelectedTime(Number(e.target.value))}
+                            className="w-full col-span-2 bg-dark-950 border border-slate-600 rounded-xl p-3 text-white focus:border-brand-500 outline-none appearance-none"
+                        >
+                            {TIME_CONTROLS.map(tc => (
+                                <option key={tc.value} value={tc.value}>{tc.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                 </div>
                  
                  <button 
                    disabled={wager > user.balance}
@@ -194,13 +220,13 @@ const App = () => {
                  >
                    Find Match
                  </button>
-               </>
+               </div>
              ) : (
                <div className="py-8">
                  <div className="w-16 h-16 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
                  <h3 className="text-xl font-bold text-white mb-2">Searching for Opponent...</h3>
-                 <p className="text-brand-400 font-mono text-lg">{searchTimer}s</p>
-                 <p className="text-slate-500 text-xs mt-4">Connecting to matchmaking server...</p>
+                 <p className="text-brand-400 font-mono text-lg">{searchTimer}s / 30s</p>
+                 <p className="text-slate-500 text-xs mt-4">Bot will auto-join if no player found in 30s.</p>
                  <button 
                    onClick={() => setIsSearching(false)}
                    className="mt-6 text-red-400 hover:text-red-300 underline text-sm"
