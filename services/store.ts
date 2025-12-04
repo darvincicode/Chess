@@ -291,8 +291,19 @@ class SupabaseStore implements IStore {
         await this.client.from('transactions').update({ status }).eq('id', txId);
     }
 
-    async getSettings(): Promise<AdminSettings> { return INITIAL_SETTINGS; }
-    async updateSettings(newSettings: AdminSettings): Promise<void> {}
+    async getSettings(): Promise<AdminSettings> {
+        const { data } = await this.client.from('admin_settings').select('*').single();
+        if (data) return data as AdminSettings;
+        return INITIAL_SETTINGS;
+    }
+
+    async updateSettings(newSettings: AdminSettings): Promise<void> {
+        const { data } = await this.client.from('admin_settings').select('id').limit(1).single();
+        if (data && data.id) {
+             const { id, ...updates } = newSettings as any; 
+             await this.client.from('admin_settings').update(updates).eq('id', data.id);
+        }
+    }
 }
 
 // --- FACTORY ---
