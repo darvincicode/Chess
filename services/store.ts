@@ -7,8 +7,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export const getSupabaseConfig = () => {
     return {
         // Use provided credentials as default if not in localStorage
-        url: localStorage.getItem('sb_url') || '',
-        key: localStorage.getItem('sb_key') || ''
+        url: localStorage.getItem('sb_url') || 'https://ptyfpfcdmxfwyvkqixbb.supabase.co',
+        key: localStorage.getItem('sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0eWZwZmNkbXhmd3l2a3FpeGJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3NzYxMzMsImV4cCI6MjA4MDM1MjEzM30.iZfEQIIrIXfi5JnRvglXfgZ4gyNVuCXMgM2-r34LT0w'
     };
 };
 
