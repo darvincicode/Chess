@@ -1,14 +1,25 @@
 import { GoogleGenAI } from "@google/genai";
 import { GEMINI_MODEL_ID } from "../constants";
 
+// Safe access to process.env for browser environments
+const getApiKey = () => {
+  try {
+    return process.env.API_KEY;
+  } catch (e) {
+    return undefined;
+  }
+};
+
 export const getBestMove = async (fen: string, validMoves: string[]): Promise<string | null> => {
-  if (!process.env.API_KEY) {
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
     console.warn("API_KEY missing. Returning random move.");
     return validMoves[Math.floor(Math.random() * validMoves.length)];
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
     // Using a system instruction to force strict behavior
     const prompt = `

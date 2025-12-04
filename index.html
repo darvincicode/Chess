@@ -7,6 +7,31 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script>
+      // POLYFILL: Prevent 'process is not defined' errors in browser
+      window.process = {
+        env: {
+          NODE_ENV: 'development',
+          API_KEY: '' // This prevents ReferenceError, though real key should come from env or UI
+        }
+      };
+
+      // ERROR HANDLER: Show errors on screen instead of blank white screen
+      window.addEventListener('error', function(e) {
+        const root = document.getElementById('root');
+        if (root && root.innerHTML.trim() === '') {
+          const errorDiv = document.createElement('div');
+          errorDiv.style.color = '#ef4444';
+          errorDiv.style.padding = '20px';
+          errorDiv.style.fontFamily = 'monospace';
+          errorDiv.style.backgroundColor = '#1e293b';
+          errorDiv.style.margin = '20px';
+          errorDiv.style.borderRadius = '8px';
+          errorDiv.innerHTML = `<strong>Application Error:</strong><br/>${e.message}`;
+          document.body.appendChild(errorDiv);
+        }
+      });
+    </script>
+    <script>
       tailwind.config = {
         theme: {
           extend: {
@@ -62,6 +87,7 @@
     "react/": "https://aistudiocdn.com/react@^19.2.1/",
     "react": "https://aistudiocdn.com/react@^19.2.1",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
     "react-chessboard": "https://aistudiocdn.com/react-chessboard@^5.8.6",
