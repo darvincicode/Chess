@@ -31,7 +31,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   const [isAiThinking, setIsAiThinking] = useState(false);
 
   // CLICK-TO-MOVE STATE
-  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [moveFrom, setMoveFrom] = useState<string | null>(null);
   const [optionSquares, setOptionSquares] = useState<Record<string, any>>({});
 
   // Time State
@@ -50,8 +50,8 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   useEffect(() => {
     if (game.fen !== fen) {
         setFen(game.fen);
-        // Reset selection if board updates externally
-        setSelectedSquare(null);
+        // Reset selection if board updates externally (e.g. opponent moved)
+        setMoveFrom(null);
         setOptionSquares({});
     }
     setWhiteTime(game.whiteTimeRemaining);
@@ -148,99 +148,85 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
     }
   };
 
-  // --- MOVE HANDLERS ---
+  // --- MOVE LOGIC ---
 
-  const makeMove = (sourceSquare: string, targetSquare: string): boolean => {
-      try {
-        // Always instantiate from current FEN to avoid stale state
-        const gameCopy = new Chess(fen);
-        const move = gameCopy.move({
-            from: sourceSquare,
-            to: targetSquare,
-            promotion: 'q', // Always auto-promote to queen for simplicity
-        });
-
-        if (!move) return false;
-
-        const newFen = gameCopy.fen();
-        setFen(newFen); // Optimistic update
-        
-        // Notify parent
-        onMove(move.san, newFen, whiteTime, blackTime);
-        
-        if (gameCopy.isGameOver()) {
-            handleGameOver(gameCopy);
-        }
-        return true;
-      } catch (e) {
-          // Invalid move or other error
-          return false;
-      }
-  };
-
-  const onDrop = (sourceSquare: string, targetSquare: string): boolean => {
-    if (!isMyTurn || game.winnerId || isAiThinking) return false;
+  const getMoveOptions = (square: string) => {
+    const tempChess = new Chess(fen);
+    const moves = tempChess.moves({
+      square: square as any,
+      verbose: true,
+    });
     
-    // Clear selection on drop
-    setSelectedSquare(null);
-    setOptionSquares({});
+    if (moves.length === 0) {
+      return {};
+    }
 
-    return makeMove(sourceSquare, targetSquare);
+    const newOptionSquares: Record<string, any> = {};
+    
+    // Highlight source square
+    newOptionSquares[square] = {
+      background: 'rgba(255, 255, 0, 0.4)',
+    };
+
+    // Highlight valid moves
+    moves.forEach((move) => {
+      newOptionSquares[move.to] = {
+        background:
+          tempChess.get(move.to as any) && tempChess.get(move.to as any).color !== tempChess.get(square as any).color
+            ? 'radial-gradient(circle, rgba(255,0,0,.5) 25%, transparent 25%)' // Capture risk color
+            : 'radial-gradient(circle, rgba(0,0,0,.5) 25%, transparent 25%)', // Normal move dot
+        borderRadius: '50%',
+      };
+    });
+    return newOptionSquares;
   };
 
   const onSquareClick = (square: string) => {
     if (!isMyTurn || game.winnerId || isAiThinking) return;
 
-    // 1. Unselect if clicking same square
-    if (selectedSquare === square) {
-        setSelectedSquare(null);
+    // 1. If we click the same square twice, deselect
+    if (moveFrom === square) {
+        setMoveFrom(null);
         setOptionSquares({});
         return;
     }
 
-    // 2. Attempt Move if a piece was already selected
-    if (selectedSquare) {
-        const success = makeMove(selectedSquare, square);
-        if (success) {
-            setSelectedSquare(null);
-            setOptionSquares({});
-            return;
+    // 2. If a piece is already selected, try to move to the new square
+    if (moveFrom) {
+        try {
+            const tempChess = new Chess(fen);
+            const move = tempChess.move({
+                from: moveFrom,
+                to: square,
+                promotion: 'q', // Always promote to queen for simplicity
+            });
+
+            // If move is valid
+            if (move) {
+                const newFen = tempChess.fen();
+                setFen(newFen);
+                setMoveFrom(null);
+                setOptionSquares({});
+                onMove(move.san, newFen, whiteTime, blackTime);
+                if (tempChess.isGameOver()) handleGameOver(tempChess);
+                return;
+            }
+        } catch (e) {
+            // Invalid move caught by chess.js
         }
-        // If move failed (e.g. clicked another piece of own color), logic falls through to selection
     }
 
-    // 3. Select Piece
-    try {
-        const gameCopy = new Chess(fen);
-        const piece = gameCopy.get(square as any);
-        
-        if (piece && piece.color === userColor) {
-            setSelectedSquare(square);
-            
-            const moves = gameCopy.moves({ square: square as any, verbose: true });
-            const newOptions: Record<string, any> = {};
-            
-            // Highlight source
-            newOptions[square] = { background: 'rgba(255, 255, 0, 0.4)' };
+    // 3. If no valid move was made, check if we clicked on one of OUR pieces to select it
+    const tempChess = new Chess(fen);
+    const piece = tempChess.get(square as any);
 
-            // Highlight destinations
-            moves.forEach((move: any) => {
-                newOptions[move.to] = {
-                    background: gameCopy.get(move.to as any) 
-                        ? 'radial-gradient(circle, rgba(255,0,0,.5) 25%, transparent 25%)' 
-                        : 'radial-gradient(circle, rgba(0,0,0,.5) 25%, transparent 25%)',
-                    borderRadius: '50%'
-                };
-            });
-            setOptionSquares(newOptions);
-        } else {
-            // Clicked empty square or opponent -> clear
-            setSelectedSquare(null);
-            setOptionSquares({});
-        }
-    } catch(e) {
-        console.error("Selection error:", e);
-        setSelectedSquare(null);
+    if (piece && piece.color === userColor) {
+        setMoveFrom(square);
+        const options = getMoveOptions(square);
+        setOptionSquares(options);
+    } else {
+        // Clicked empty square or opponent piece without valid move -> Deselect
+        setMoveFrom(null);
         setOptionSquares({});
     }
   };
@@ -257,7 +243,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
       }`}>
           {game.winnerId 
              ? (game.winnerId === currentUser.id ? "🏆 YOU WON" : "❌ GAME OVER") 
-             : (isMyTurn ? "🟢 YOUR TURN" : "⏳ OPPONENT'S TURN")
+             : (isMyTurn ? "🟢 YOUR TURN - Click piece then click destination" : "⏳ OPPONENT'S TURN")
           }
       </div>
 
@@ -282,17 +268,20 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
         <Chessboard 
           id="BasicBoard"
           position={fen} 
-          onPieceDrop={onDrop}
           onSquareClick={onSquareClick}
           customSquareStyles={optionSquares}
           boardOrientation={isWhite ? 'white' : 'black'}
           customDarkSquareStyle={{ backgroundColor: '#1e293b' }}
           customLightSquareStyle={{ backgroundColor: '#475569' }}
-          arePiecesDraggable={!game.winnerId && isMyTurn} 
+          arePiecesDraggable={false} // Force click-to-move interactions
           animationDuration={200}
         />
         {!isMyTurn && !game.winnerId && (
-            <div className="absolute inset-0 bg-black/10 z-10" />
+            <div className="absolute inset-0 bg-black/10 z-10 flex items-center justify-center">
+                <div className="bg-black/50 text-white px-3 py-1 rounded text-sm backdrop-blur-sm">
+                    Waiting for opponent...
+                </div>
+            </div>
         )}
       </div>
 
