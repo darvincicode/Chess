@@ -4,21 +4,27 @@ import { GEMINI_MODEL_ID } from "../constants";
 // Safe access to process.env for browser environments
 const getApiKey = () => {
   try {
+    // Check global scope first (browser polyfill)
+    if (typeof window !== 'undefined' && (window as any).process?.env?.API_KEY) {
+      return (window as any).process.env.API_KEY;
+    }
+    // Fallback to standard process.env if available
     return process.env.API_KEY;
   } catch (e) {
+    console.warn("Could not access process.env:", e);
     return undefined;
   }
 };
 
 export const getBestMove = async (fen: string, validMoves: string[]): Promise<string | null> => {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
-    console.warn("API_KEY missing. Returning random move.");
-    return validMoves[Math.floor(Math.random() * validMoves.length)];
-  }
-
   try {
+    const apiKey = getApiKey();
+    
+    if (!apiKey) {
+      console.warn("API_KEY missing. Returning random move.");
+      return validMoves[Math.floor(Math.random() * validMoves.length)];
+    }
+
     const ai = new GoogleGenAI({ apiKey: apiKey });
     
     // Using a system instruction to force strict behavior
@@ -53,6 +59,7 @@ export const getBestMove = async (fen: string, validMoves: string[]): Promise<st
 
   } catch (error) {
     console.error("Gemini API Error:", error);
+    // CRITICAL: Always fallback to random move on error to keep game going
     return validMoves[Math.floor(Math.random() * validMoves.length)];
   }
 };

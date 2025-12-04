@@ -40,15 +40,19 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   const isMyTurn = game.turn === userColor;
 
   // Determine opponent name
-  const opponentName = game.isAiGame ? game.blackId : 'Opponent';
+  const opponentName = game.isAiGame ? (isWhite ? game.blackId : game.whiteId) : 'Opponent';
 
   // Sync state with parent game object on load/update
   useEffect(() => {
-    const newChess = new Chess(game.fen);
-    setChess(newChess);
-    setFen(game.fen);
-    setWhiteTime(game.whiteTimeRemaining);
-    setBlackTime(game.blackTimeRemaining);
+    try {
+        const newChess = new Chess(game.fen);
+        setChess(newChess);
+        setFen(game.fen);
+        setWhiteTime(game.whiteTimeRemaining);
+        setBlackTime(game.blackTimeRemaining);
+    } catch (e) {
+        console.error("Error updating board state:", e);
+    }
   }, [game.fen, game.whiteTimeRemaining, game.blackTimeRemaining]);
 
   // Timer Tick Effect
@@ -86,36 +90,37 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   // AI Logic
   useEffect(() => {
     const checkAiTurn = async () => {
+      // If it's AI game, and turn is NOT user's color, then it's Bot's turn.
       if (game.isAiGame && game.turn !== userColor && !game.winnerId && !isAiThinking) {
         setIsAiThinking(true);
         
-        // Artificial delay for realism (subtracted from bot time essentially)
-        await new Promise(r => setTimeout(r, AI_THINKING_TIME_MS));
+        try {
+            // Artificial delay for realism (subtracted from bot time essentially)
+            await new Promise(r => setTimeout(r, AI_THINKING_TIME_MS));
 
-        const moves = chess.moves();
-        if (moves.length === 0) {
-            handleGameOver();
-            setIsAiThinking(false);
-            return;
-        }
-
-        const bestMove = await getBestMove(chess.fen(), moves);
-        
-        if (bestMove) {
-          try {
-            const moveResult = chess.move(bestMove);
-            if (moveResult) {
-               // Bot moves, pass CURRENT local time
-               onMove(moveResult.san, chess.fen(), whiteTime, blackTime);
-               if (chess.isGameOver()) {
-                 handleGameOver();
-               }
+            // Ensure chess instance is fresh
+            const tempChess = new Chess(game.fen);
+            const moves = tempChess.moves();
+            
+            if (moves.length === 0) {
+                handleGameOver(tempChess);
+                return;
             }
-          } catch (e) {
-            console.error("Move error", e);
-          }
+
+            const bestMove = await getBestMove(game.fen, moves);
+            
+            if (bestMove) {
+                const moveResult = tempChess.move(bestMove);
+                if (moveResult) {
+                    // Bot moves, pass CURRENT local time
+                    onMove(moveResult.san, tempChess.fen(), whiteTime, blackTime);
+                }
+            }
+        } catch (e) {
+            console.error("AI Move Error:", e);
+        } finally {
+            setIsAiThinking(false);
         }
-        setIsAiThinking(false);
       }
     };
 
@@ -123,19 +128,21 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.fen, game.turn, game.isAiGame, userColor]);
 
-  const handleGameOver = () => {
-    if (chess.isCheckmate()) {
-      onGameOver(chess.turn() === 'w' ? 'black' : 'white');
-    } else if (chess.isDraw() || chess.isStalemate()) {
-      onGameOver(null); // Draw
+  const handleGameOver = (chessInstance = chess) => {
+    if (chessInstance.isCheckmate()) {
+      onGameOver(chessInstance.turn() === 'w' ? 'black' : 'white', 'checkmate');
+    } else if (chessInstance.isDraw() || chessInstance.isStalemate() || chessInstance.isThreefoldRepetition()) {
+      onGameOver(null, 'draw'); 
     }
   };
 
   const onDrop = (sourceSquare: string, targetSquare: string): boolean => {
-    if (!isMyTurn || game.winnerId) return false;
+    // We allow dragging visually even if not turn, but we reject the drop here
+    if (!isMyTurn || game.winnerId || isAiThinking) return false;
 
     try {
-      const move = chess.move({
+      const tempChess = new Chess(game.fen);
+      const move = tempChess.move({
         from: sourceSquare,
         to: targetSquare,
         promotion: 'q', 
@@ -143,15 +150,16 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
 
       if (move === null) return false;
 
-      setFen(chess.fen());
+      setFen(tempChess.fen());
       // Pass CURRENT local time state up to parent
-      onMove(move.san, chess.fen(), whiteTime, blackTime);
+      onMove(move.san, tempChess.fen(), whiteTime, blackTime);
       
-      if (chess.isGameOver()) {
-        handleGameOver();
+      if (tempChess.isGameOver()) {
+        handleGameOver(tempChess);
       }
       return true;
     } catch (e) {
+      console.error("Move error:", e);
       return false;
     }
   };
@@ -159,11 +167,23 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   const isWhiteTurn = game.turn === 'w';
 
   return (
-    <div className="flex flex-col items-center gap-6">
+    <div className="flex flex-col items-center gap-6 w-full">
+      {/* Game Status Banner */}
+      <div className={`px-6 py-2 rounded-full font-bold text-sm tracking-wide shadow-lg border ${
+          isMyTurn 
+            ? 'bg-brand-600 text-white border-brand-400 animate-pulse' 
+            : 'bg-dark-800 text-slate-400 border-slate-700'
+      }`}>
+          {game.winnerId 
+             ? (game.winnerId === currentUser.id ? "🏆 YOU WON" : "❌ GAME OVER") 
+             : (isMyTurn ? "🟢 YOUR TURN" : "⏳ OPPONENT'S TURN")
+          }
+      </div>
+
       {/* Opponent Info (Top) */}
       <div className={`flex justify-between items-center w-full max-w-[500px] p-3 rounded-lg border ${!isWhiteTurn ? 'border-brand-500 bg-brand-900/10' : 'border-slate-800 bg-dark-800'}`}>
         <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${game.turn === 'b' ? 'bg-brand-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${game.turn === (isWhite ? 'b' : 'w') ? 'bg-brand-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
                 {opponentName.charAt(0).toUpperCase()}
             </div>
             <div>
@@ -177,21 +197,29 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
       </div>
 
       {/* Board */}
-      <div className="w-full max-w-[500px] aspect-square shadow-2xl shadow-brand-900/20 border-4 border-slate-700 rounded-lg overflow-hidden bg-dark-800">
+      {/* touch-action: none is CRITICAL for mobile drag support */}
+      <div className="w-full max-w-[500px] aspect-square shadow-2xl shadow-brand-900/20 border-4 border-slate-700 rounded-lg overflow-hidden bg-dark-800 relative" style={{ touchAction: 'none' }}>
         <Chessboard 
           position={fen} 
           onPieceDrop={onDrop}
           boardOrientation={isWhite ? 'white' : 'black'}
           customDarkSquareStyle={{ backgroundColor: '#1e293b' }}
           customLightSquareStyle={{ backgroundColor: '#475569' }}
-          arePiecesDraggable={isMyTurn && !game.winnerId} 
+          // Enable dragging visually so user can test touch, but logic restricts actual moves in onDrop
+          arePiecesDraggable={!game.winnerId} 
+          animationDuration={200}
         />
+        
+        {/* Helper overlay for turn state if needed (optional) */}
+        {!isMyTurn && !game.winnerId && (
+            <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+        )}
       </div>
 
       {/* User Info (Bottom) */}
       <div className={`flex justify-between items-center w-full max-w-[500px] p-3 rounded-lg border ${isWhiteTurn ? 'border-brand-500 bg-brand-900/10' : 'border-slate-800 bg-dark-800'}`}>
         <div className="flex items-center gap-3">
-             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${game.turn === 'w' ? 'bg-brand-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${game.turn === (isWhite ? 'w' : 'b') ? 'bg-brand-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
                 {currentUser.email.charAt(0).toUpperCase()}
             </div>
             <div>

@@ -73,11 +73,16 @@ const App = () => {
     const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     const timeInMs = selectedTime * 60 * 1000;
 
+    // Randomize sides (50/50 chance to be White or Black)
+    const userIsWhite = Math.random() > 0.5;
+    const whiteId = userIsWhite ? user.id : botName;
+    const blackId = userIsWhite ? botName : user.id;
+
     const gameId = Math.random().toString(36).substr(2, 9);
     const newGame: GameSession = {
       id: gameId,
-      whiteId: user.id,
-      blackId: botName, 
+      whiteId: whiteId,
+      blackId: blackId, 
       wager: wager,
       fen: STARTING_FEN,
       turn: 'w',
@@ -111,6 +116,7 @@ const App = () => {
   const handleMove = (moveSan: string, newFen: string, wTime: number, bTime: number) => {
     if (!activeGame || !user) return;
 
+    // Calculate next turn based on current active turn in game state
     const nextTurn = activeGame.turn === 'w' ? 'b' : 'w';
     
     const updatedGame: GameSession = {
@@ -137,17 +143,17 @@ const App = () => {
 
     const resultMethod = method ? ` (${method})` : '';
 
-    // Logic: If winner is user, win. If winner is bot (blackId) in AI game, lose.
+    // Logic: If winner is user, win. 
+    // If activeGame is AI game and winner is NOT user, then user lost.
     if (winnerId === user.id) {
         await store.updateBalance(user.id, activeGame.wager * 2);
         alert(`You Won${resultMethod}! Prize credited.`);
-    } else if (activeGame.isAiGame && winnerId === activeGame.blackId) {
+    } else if (activeGame.isAiGame && winnerId !== user.id && winnerId !== null) {
         alert(`You Lost${resultMethod}! Wager lost.`);
     } else if (!winnerId) {
         await store.updateBalance(user.id, activeGame.wager);
         alert(`Draw${resultMethod}! Wager returned.`);
     } else {
-        // PvP logic would go here
         alert("Game Over.");
     }
     await refreshUserData();
