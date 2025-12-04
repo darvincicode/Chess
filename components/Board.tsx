@@ -30,6 +30,10 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   const [fen, setFen] = useState(game.fen);
   const [isAiThinking, setIsAiThinking] = useState(false);
 
+  // CLICK-TO-MOVE STATE
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [optionSquares, setOptionSquares] = useState<Record<string, any>>({});
+
   // Time State
   const [whiteTime, setWhiteTime] = useState(game.whiteTimeRemaining);
   const [blackTime, setBlackTime] = useState(game.blackTimeRemaining);
@@ -48,6 +52,9 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
         const newChess = new Chess(game.fen);
         setChess(newChess);
         setFen(game.fen);
+        // Reset selection on external update
+        setSelectedSquare(null);
+        setOptionSquares({});
         setWhiteTime(game.whiteTimeRemaining);
         setBlackTime(game.blackTimeRemaining);
     } catch (e) {
@@ -95,10 +102,9 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
         setIsAiThinking(true);
         
         try {
-            // Artificial delay for realism (subtracted from bot time essentially)
+            // Artificial delay for realism
             await new Promise(r => setTimeout(r, AI_THINKING_TIME_MS));
 
-            // Ensure chess instance is fresh
             const tempChess = new Chess(game.fen);
             const moves = tempChess.moves();
             
@@ -112,7 +118,6 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
             if (bestMove) {
                 const moveResult = tempChess.move(bestMove);
                 if (moveResult) {
-                    // Bot moves, pass CURRENT local time
                     onMove(moveResult.san, tempChess.fen(), whiteTime, blackTime);
                 }
             }
@@ -136,31 +141,88 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
     }
   };
 
-  const onDrop = (sourceSquare: string, targetSquare: string): boolean => {
-    // We allow dragging visually even if not turn, but we reject the drop here
-    if (!isMyTurn || game.winnerId || isAiThinking) return false;
+  // --- MOVE HANDLERS ---
 
-    try {
-      const tempChess = new Chess(game.fen);
-      const move = tempChess.move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: 'q', 
-      });
+  const makeMove = (sourceSquare: string, targetSquare: string): boolean => {
+      try {
+        const tempChess = new Chess(game.fen);
+        const move = tempChess.move({
+            from: sourceSquare,
+            to: targetSquare,
+            promotion: 'q', 
+        });
 
-      if (move === null) return false;
+        if (move === null) return false;
 
-      setFen(tempChess.fen());
-      // Pass CURRENT local time state up to parent
-      onMove(move.san, tempChess.fen(), whiteTime, blackTime);
-      
-      if (tempChess.isGameOver()) {
-        handleGameOver(tempChess);
+        setFen(tempChess.fen());
+        onMove(move.san, tempChess.fen(), whiteTime, blackTime);
+        
+        if (tempChess.isGameOver()) {
+            handleGameOver(tempChess);
+        }
+        return true;
+      } catch (e) {
+          return false;
       }
-      return true;
-    } catch (e) {
-      console.error("Move error:", e);
-      return false;
+  };
+
+  const onDrop = (sourceSquare: string, targetSquare: string): boolean => {
+    if (!isMyTurn || game.winnerId || isAiThinking) return false;
+    
+    // Clear click selection if drag is used
+    setSelectedSquare(null);
+    setOptionSquares({});
+
+    return makeMove(sourceSquare, targetSquare);
+  };
+
+  // Click-to-Move Logic
+  const onSquareClick = (square: string) => {
+    if (!isMyTurn || game.winnerId || isAiThinking) return;
+
+    // 1. If we clicked the already selected square, unselect it
+    if (selectedSquare === square) {
+        setSelectedSquare(null);
+        setOptionSquares({});
+        return;
+    }
+
+    // 2. If we have a source square selected, try to move to the new square
+    if (selectedSquare) {
+        const success = makeMove(selectedSquare, square);
+        if (success) {
+            setSelectedSquare(null);
+            setOptionSquares({});
+            return;
+        }
+        // If move failed, we might be clicking another one of our pieces to switch selection
+    }
+
+    // 3. Select a piece
+    const piece = chess.get(square as any);
+    if (piece && piece.color === (isWhite ? 'w' : 'b')) {
+        setSelectedSquare(square);
+        
+        const moves = chess.moves({ square: square as any, verbose: true });
+        const newOptions: Record<string, any> = {};
+        
+        // Highlight source
+        newOptions[square] = { background: 'rgba(255, 255, 0, 0.4)' };
+
+        // Highlight destinations
+        moves.forEach((move) => {
+            newOptions[move.to] = {
+                background: chess.get(move.to as any) 
+                    ? 'radial-gradient(circle, rgba(255,0,0,.5) 25%, transparent 25%)' 
+                    : 'radial-gradient(circle, rgba(0,0,0,.5) 25%, transparent 25%)',
+                borderRadius: '50%'
+            };
+        });
+        setOptionSquares(newOptions);
+    } else {
+        // Clicked empty square or opponent piece without selection -> clear
+        setSelectedSquare(null);
+        setOptionSquares({});
     }
   };
 
@@ -202,15 +264,16 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
         <Chessboard 
           position={fen} 
           onPieceDrop={onDrop}
+          onSquareClick={onSquareClick}
+          customSquareStyles={optionSquares}
           boardOrientation={isWhite ? 'white' : 'black'}
           customDarkSquareStyle={{ backgroundColor: '#1e293b' }}
           customLightSquareStyle={{ backgroundColor: '#475569' }}
-          // Enable dragging visually so user can test touch, but logic restricts actual moves in onDrop
           arePiecesDraggable={!game.winnerId} 
           animationDuration={200}
         />
         
-        {/* Helper overlay for turn state if needed (optional) */}
+        {/* Helper overlay for turn state */}
         {!isMyTurn && !game.winnerId && (
             <div className="absolute inset-0 bg-black/10 pointer-events-none" />
         )}

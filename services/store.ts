@@ -203,6 +203,13 @@ class SupabaseStore implements IStore {
         const { data: { session } } = await this.client.auth.getSession();
         if (session) {
             await this.fetchCurrentUser(session.user.id);
+            
+            // AUTO-FIX ON LOAD: Ensure admin role persists across reloads if database is slightly out of sync
+            if (this.currentUser && this.currentUser.email.includes('admin') && this.currentUser.role !== UserRole.ADMIN) {
+                console.log("Auto-promoting admin user on init...");
+                await this.updateUser(this.currentUser.id, { role: UserRole.ADMIN });
+                this.currentUser.role = UserRole.ADMIN;
+            }
         }
     }
 
