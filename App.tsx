@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from './components/Layout';
-import { AuthForm } from './components/AuthForm'; // Will be defined inline or next
+import { AuthForm } from './components/AuthForm';
 import { Board } from './components/Board';
 import { Wallet } from './components/Wallet';
 import { AdminPanel } from './components/AdminPanel';
