@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grandmaster Crypto Chess</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              brand: {
+                50: '#f0fdf4',
+                100: '#dcfce7',
+                400: '#4ade80',
+                500: '#22c55e',
+                600: '#16a34a',
+                700: '#15803d',
+                800: '#166534',
+                900: '#14532d',
+              },
+              dark: {
+                800: '#1e293b',
+                900: '#0f172a',
+                950: '#020617',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #020617;
+        color: #e2e8f0;
+      }
+      /* Scrollbar styling */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f172a; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #475569; 
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
+    "react-chessboard": "https://aistudiocdn.com/react-chessboard@^5.8.6",
+    "chess.js": "https://aistudiocdn.com/chess.js@^1.4.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
