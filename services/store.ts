@@ -7,8 +7,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export const getSupabaseConfig = () => {
     return {
         // Use provided credentials as default if not in localStorage
-        url: localStorage.getItem('sb_url') || 'https://ptyfpfcdmxfwyvkqixbb.supabase.co',
-        key: localStorage.getItem('sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0eWZwZmNkbXhmd3l2a3FpeGJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3NzYxMzMsImV4cCI6MjA4MDM1MjEzM30.iZfEQIIrIXfi5JnRvglXfgZ4gyNVuCXMgM2-r34LT0w'
+        url: localStorage.getItem('sb_url') || '',
+        key: localStorage.getItem('sb_key') || ''
     };
 };
 
@@ -44,7 +44,7 @@ interface IStore {
   updateSettings(newSettings: AdminSettings): Promise<void>;
 }
 
-// --- MOCK STORE (LOCAL STORAGE) ---
+// --- MOCK STORE (LOCAL STORAGE BACKUP) ---
 
 class MockStore implements IStore {
   private users: User[] = [];
@@ -62,8 +62,6 @@ class MockStore implements IStore {
     } else {
       await this.createUser('admin', '123456', UserRole.ADMIN);
     }
-    
-    // Auto login if session persists (simple mock)
     const sessionEmail = localStorage.getItem('mock_session_email');
     if (sessionEmail) {
         this.currentUser = this.users.find(u => u.email === sessionEmail) || null;
@@ -79,16 +77,12 @@ class MockStore implements IStore {
   }
 
   async login(email: string, pass: string): Promise<User | null> {
-    // Artificial delay
     await new Promise(r => setTimeout(r, 500));
-    
     const user = this.users.find(u => u.email === email);
-    if (user && !user.isBanned) {
-      if (user.password === pass) {
+    if (user && !user.isBanned && user.password === pass) {
         this.currentUser = user;
         localStorage.setItem('mock_session_email', email);
         return user;
-      }
     }
     return null;
   }
@@ -109,7 +103,7 @@ class MockStore implements IStore {
       email,
       password: pass,
       role,
-      balance: role === UserRole.ADMIN ? 999999 : 100, // Give 100 bonus for testing
+      balance: role === UserRole.ADMIN ? 999999 : 100,
       isBanned: false,
       wins: 0,
       losses: 0
@@ -124,16 +118,11 @@ class MockStore implements IStore {
     if (user) {
       user.balance += amount;
       this.save();
-      if (this.currentUser && this.currentUser.id === userId) {
-          this.currentUser.balance = user.balance;
-      }
+      if (this.currentUser && this.currentUser.id === userId) this.currentUser.balance = user.balance;
     }
   }
 
-  async getUsers(): Promise<User[]> {
-    return this.users;
-  }
-
+  async getUsers(): Promise<User[]> { return this.users; }
   async updateUser(id: string, updates: Partial<User>) {
     const idx = this.users.findIndex(u => u.id === id);
     if (idx !== -1) {
@@ -141,24 +130,16 @@ class MockStore implements IStore {
       this.save();
     }
   }
-
   async createTransaction(tx: Omit<Transaction, 'id' | 'timestamp' | 'status'>): Promise<Transaction> {
-    const newTx: Transaction = {
-      ...tx,
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: Date.now(),
-      status: 'PENDING'
-    };
+    const newTx: Transaction = { ...tx, id: Math.random().toString(36).substr(2, 9), timestamp: Date.now(), status: 'PENDING' };
     this.transactions.push(newTx);
     this.save();
     return newTx;
   }
-
   async getTransactions(userId?: string): Promise<Transaction[]> {
     if (userId) return this.transactions.filter(t => t.userId === userId);
     return this.transactions;
   }
-
   async updateTransactionStatus(txId: string, status: Transaction['status']) {
     const tx = this.transactions.find(t => t.id === txId);
     if (tx) {
@@ -173,15 +154,8 @@ class MockStore implements IStore {
       this.save();
     }
   }
-
-  async getSettings(): Promise<AdminSettings> {
-    return this.settings;
-  }
-
-  async updateSettings(newSettings: AdminSettings) {
-    this.settings = newSettings;
-    this.save();
-  }
+  async getSettings(): Promise<AdminSettings> { return this.settings; }
+  async updateSettings(newSettings: AdminSettings) { this.settings = newSettings; this.save(); }
 }
 
 // --- SUPABASE STORE ---
@@ -192,10 +166,7 @@ class SupabaseStore implements IStore {
     
     constructor(url: string, key: string) {
         this.client = createClient(url, key, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-            }
+            auth: { persistSession: true, autoRefreshToken: true }
         });
     }
 
@@ -203,43 +174,24 @@ class SupabaseStore implements IStore {
         const { data: { session } } = await this.client.auth.getSession();
         if (session) {
             await this.fetchCurrentUser(session.user.id);
-            
-            // AUTO-FIX ON LOAD: Ensure admin role persists across reloads if database is slightly out of sync
-            if (this.currentUser && this.currentUser.email.includes('admin') && this.currentUser.role !== UserRole.ADMIN) {
-                console.log("Auto-promoting admin user on init...");
-                await this.updateUser(this.currentUser.id, { role: UserRole.ADMIN });
-                this.currentUser.role = UserRole.ADMIN;
-            }
         }
     }
 
     private async fetchCurrentUser(id: string) {
         const { data } = await this.client.from('profiles').select('*').eq('id', id).single();
-        if (data) {
-            this.currentUser = data;
-        } else {
-            // Profile missing (maybe deleted or failed creation). 
-            this.currentUser = null; 
-        }
+        if (data) this.currentUser = data;
+        else this.currentUser = null;
     }
 
     async login(email: string, pass: string): Promise<User | null> {
         const { data, error } = await this.client.auth.signInWithPassword({ email, password: pass });
-        
-        if (error) {
-            console.error("Login Auth Error:", error);
-            throw error; // Propagate error so AuthForm can handle "Email not confirmed"
-        }
-
+        if (error) throw error;
         if (!data.user) return null;
-
-        // Try to fetch existing profile
         await this.fetchCurrentUser(data.user.id);
-
-        // RECOVERY: If Auth succeeded but no profile exists, create one now.
+        
+        // Auto-create profile if missing (recovery)
         if (!this.currentUser) {
-            console.log("Profile missing for authenticated user. Creating default profile...");
-            const recoveryUser: User = {
+             const recoveryUser: User = {
                 id: data.user.id,
                 email: email,
                 role: email.includes('admin') ? UserRole.ADMIN : UserRole.USER,
@@ -248,22 +200,9 @@ class SupabaseStore implements IStore {
                 wins: 0,
                 losses: 0
             };
-            const { error: dbError } = await this.client.from('profiles').insert(recoveryUser);
-            if (!dbError) {
-                this.currentUser = recoveryUser;
-            } else {
-                console.error("Failed to create recovery profile:", dbError);
-                return null;
-            }
+            await this.client.from('profiles').insert(recoveryUser);
+            this.currentUser = recoveryUser;
         }
-        
-        // AUTO-FIX ADMIN ROLE: If logging in as admin but role is USER, fix it.
-        if (this.currentUser && email.includes('admin') && this.currentUser.role !== UserRole.ADMIN) {
-            console.log("Auto-promoting admin user...");
-            await this.updateUser(this.currentUser.id, { role: UserRole.ADMIN });
-            this.currentUser.role = UserRole.ADMIN;
-        }
-
         return this.currentUser;
     }
 
@@ -272,45 +211,37 @@ class SupabaseStore implements IStore {
         this.currentUser = null;
     }
 
-    async getCurrentUser(): Promise<User | null> {
-        return this.currentUser;
-    }
+    async getCurrentUser(): Promise<User | null> { return this.currentUser; }
 
     async createUser(email: string, pass: string, role: UserRole = UserRole.USER): Promise<User | null> {
         const { data, error } = await this.client.auth.signUp({ 
             email, 
             password: pass,
-            options: {
-                data: { role } // Meta data for triggers
-            }
+            options: { data: { role } } 
         });
         
-        if (error || !data.user) {
-            console.error("Signup error", error);
-            throw error; // Propagate error
-        }
+        if (error) throw error;
+        if (!data.user) return null;
 
-        // Create profile manually if trigger doesn't exist
         const newUser: User = {
             id: data.user.id,
             email: email,
             role: role,
-            balance: 100, // Sign up bonus
+            balance: 100,
             isBanned: false,
             wins: 0,
             losses: 0
         };
 
-        // Try insert profile - ignore error if it already exists (e.g. via trigger)
+        // If email confirmation is disabled in Supabase, session is active immediately.
+        // We try to insert profile. If it fails (duplicate), we ignore.
         const { error: dbError } = await this.client.from('profiles').insert(newUser);
-        if (dbError) console.log("Profile insert info (might exist):", dbError.message);
-
+        
         this.currentUser = newUser;
         return newUser;
     }
 
     async updateBalance(userId: string, amount: number): Promise<void> {
-        // Use RPC or direct update
         const { data } = await this.client.from('profiles').select('balance').eq('id', userId).single();
         if (data) {
             const newBal = data.balance + amount;
@@ -325,24 +256,15 @@ class SupabaseStore implements IStore {
     }
 
     async updateUser(id: string, updates: Partial<User>): Promise<void> {
-        // Remove password from updates if it exists as it is handled by auth
         const { password, ...safeUpdates } = updates;
-        
-        if (password) {
-            await this.client.auth.updateUser({ password: password });
-        }
-        
+        if (password) await this.client.auth.updateUser({ password: password });
         if (Object.keys(safeUpdates).length > 0) {
             await this.client.from('profiles').update(safeUpdates).eq('id', id);
         }
     }
 
     async createTransaction(tx: Omit<Transaction, 'id' | 'timestamp' | 'status'>): Promise<Transaction> {
-        const newTx = {
-            ...tx,
-            status: 'PENDING',
-            timestamp: Date.now()
-        };
+        const newTx = { ...tx, status: 'PENDING', timestamp: Date.now() };
         const { data } = await this.client.from('transactions').insert(newTx).select().single();
         return data as Transaction;
     }
@@ -357,9 +279,7 @@ class SupabaseStore implements IStore {
     async updateTransactionStatus(txId: string, status: Transaction['status']): Promise<void> {
         const { data: tx } = await this.client.from('transactions').select('*').eq('id', txId).single();
         if (!tx) return;
-
         if (status === 'COMPLETED') {
-             // Logic should ideally be in a Postgres Function (Database Transaction)
              const { data: user } = await this.client.from('profiles').select('*').eq('id', tx.userId).single();
              if (user) {
                  let newBal = user.balance;
@@ -371,19 +291,14 @@ class SupabaseStore implements IStore {
         await this.client.from('transactions').update({ status }).eq('id', txId);
     }
 
-    async getSettings(): Promise<AdminSettings> {
-        // Mock for settings as they are usually config file
-        return INITIAL_SETTINGS;
-    }
-
-    async updateSettings(newSettings: AdminSettings): Promise<void> {
-        // No-op for now
-    }
+    async getSettings(): Promise<AdminSettings> { return INITIAL_SETTINGS; }
+    async updateSettings(newSettings: AdminSettings): Promise<void> {}
 }
 
 // --- FACTORY ---
 
 const config = getSupabaseConfig();
+// Export the store instance. If config is present, use Supabase, else Mock.
 export const store = (config.url && config.key) 
     ? new SupabaseStore(config.url, config.key) 
     : new MockStore();

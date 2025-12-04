@@ -22,8 +22,6 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
 
-    // FIX: Supabase requires a valid email format. 
-    // If user types 'admin', we treat it as 'admin@gmchess.com'
     let submitEmail = email.trim();
     if (!submitEmail.includes('@')) {
         submitEmail = `${submitEmail}@gmchess.com`;
@@ -35,37 +33,29 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
             if (user) {
                 onLogin(user);
             } else {
-                // This branch is rarely reached now as errors throw
-                alert("Login failed. If this is your first time, please switch to 'Sign Up'.");
+                alert("Login failed. Please check your credentials.");
             }
         } else {
-            // Check if user exists (logic inside store)
+            // Sign Up Flow
             const user = await store.createUser(submitEmail, password, isAdminMode ? UserRole.ADMIN : UserRole.USER);
             if (user) {
-                alert("Account created successfully! Please check your email inbox to confirm your address before logging in.");
-                setIsLogin(true); // Switch to login view
+                // AUTO-LOGIN: Directly log the user in after creation
+                // Note: This requires "Confirm Email" to be disabled in Supabase project settings
+                onLogin(user);
             }
         }
     } catch (e: any) {
         console.error(e);
-        // SPECIFIC ERROR HANDLING
-        if (e.message && e.message.includes("Email not confirmed")) {
-             alert("⚠️ EMAIL NOT VERIFIED\n\nPlease check your inbox (and spam folder) for the confirmation link from Supabase to activate your account.");
-        } else if (e.message && e.message.includes("Invalid login credentials")) {
-             alert("Invalid email or password. Please try again.");
-        } else {
-             alert("Authentication Error: " + (e.message || "Unknown error"));
-        }
+        alert("Authentication Error: " + (e.message || "Unknown error"));
     } finally {
         setLoading(false);
     }
   };
 
   const handleAdminFill = () => {
-    // FIX: Pre-fill with the email format compatible with Supabase
     setEmail('admin@gmchess.com');
     setPassword('123456');
-    setIsLogin(true); // Default to login, but user might need to switch to Sign Up if first time
+    setIsLogin(true); 
   };
 
   const handleSaveConfig = () => {
@@ -167,7 +157,6 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
                 <span>⚡</span> Admin Panel Access
             </button>
             
-            {/* Helper text for the format fix */}
             <p className="text-[10px] text-slate-700">
                Note: 'admin' will be treated as 'admin@gmchess.com'
             </p>
