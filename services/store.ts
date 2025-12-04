@@ -387,6 +387,3 @@ const config = getSupabaseConfig();
 export const store = (config.url && config.key) 
     ? new SupabaseStore(config.url, config.key) 
     : new MockStore();
-
-// Initialize immediately
-store.init();

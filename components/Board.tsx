@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Chess, Move } from 'chess.js';
+import { Chess } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
 import { GameSession, User } from '../types';
 import { GEMINI_MODEL_ID, AI_THINKING_TIME_MS } from '../constants';
