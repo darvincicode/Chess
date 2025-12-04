@@ -26,7 +26,7 @@ const formatTime = (ms: number) => {
 };
 
 export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameOver }) => {
-  const [chess, setChess] = useState(new Chess(game.fen));
+  // Single source of truth for the board state is the FEN string
   const [fen, setFen] = useState(game.fen);
   const [isAiThinking, setIsAiThinking] = useState(false);
 
@@ -48,20 +48,14 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
 
   // Sync state with parent game object on load/update
   useEffect(() => {
-    try {
-        // Only update if FEN actually changed to avoid resetting local state during drag
-        if (game.fen !== fen) {
-            const newChess = new Chess(game.fen);
-            setChess(newChess);
-            setFen(game.fen);
-            setSelectedSquare(null);
-            setOptionSquares({});
-        }
-        setWhiteTime(game.whiteTimeRemaining);
-        setBlackTime(game.blackTimeRemaining);
-    } catch (e) {
-        console.error("Error updating board state:", e);
+    if (game.fen !== fen) {
+        setFen(game.fen);
+        // Reset selection if board updates externally
+        setSelectedSquare(null);
+        setOptionSquares({});
     }
+    setWhiteTime(game.whiteTimeRemaining);
+    setBlackTime(game.blackTimeRemaining);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.fen, game.whiteTimeRemaining, game.blackTimeRemaining]);
 
@@ -107,16 +101,16 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
         try {
             await new Promise(r => setTimeout(r, AI_THINKING_TIME_MS));
 
-            // Use fresh instance for AI calculation
+            // Use fresh instance based on current FEN
             const tempChess = new Chess(game.fen);
-            const moves = tempChess.moves();
             
-            if (moves.length === 0) {
-                if (tempChess.isGameOver()) {
-                    handleGameOver(tempChess);
-                }
+            if (tempChess.isGameOver()) {
+                handleGameOver(tempChess);
                 return;
             }
+
+            const moves = tempChess.moves();
+            if (moves.length === 0) return;
 
             const bestMove = await getBestMove(game.fen, moves);
             
@@ -158,30 +152,28 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
 
   const makeMove = (sourceSquare: string, targetSquare: string): boolean => {
       try {
-        // Use local state FEN to ensure immediate responsiveness
-        const tempChess = new Chess(fen);
-        const move = tempChess.move({
+        // Always instantiate from current FEN to avoid stale state
+        const gameCopy = new Chess(fen);
+        const move = gameCopy.move({
             from: sourceSquare,
             to: targetSquare,
-            promotion: 'q', 
+            promotion: 'q', // Always auto-promote to queen for simplicity
         });
 
-        // chess.js 1.x throws on invalid move, but checking result just in case
         if (!move) return false;
 
-        const newFen = tempChess.fen();
+        const newFen = gameCopy.fen();
         setFen(newFen); // Optimistic update
-        setChess(tempChess);
         
         // Notify parent
         onMove(move.san, newFen, whiteTime, blackTime);
         
-        if (tempChess.isGameOver()) {
-            handleGameOver(tempChess);
+        if (gameCopy.isGameOver()) {
+            handleGameOver(gameCopy);
         }
         return true;
       } catch (e) {
-          // Invalid moves (e.g. clicking invalid square) land here
+          // Invalid move or other error
           return false;
       }
   };
@@ -189,6 +181,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
   const onDrop = (sourceSquare: string, targetSquare: string): boolean => {
     if (!isMyTurn || game.winnerId || isAiThinking) return false;
     
+    // Clear selection on drop
     setSelectedSquare(null);
     setOptionSquares({});
 
@@ -205,7 +198,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
         return;
     }
 
-    // 2. Attempt Move
+    // 2. Attempt Move if a piece was already selected
     if (selectedSquare) {
         const success = makeMove(selectedSquare, square);
         if (success) {
@@ -213,17 +206,18 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
             setOptionSquares({});
             return;
         }
-        // If move failed, proceed to select new piece (if applicable)
+        // If move failed (e.g. clicked another piece of own color), logic falls through to selection
     }
 
     // 3. Select Piece
     try {
-        // Use local chess instance to check piece ownership
-        const piece = chess.get(square as any);
+        const gameCopy = new Chess(fen);
+        const piece = gameCopy.get(square as any);
+        
         if (piece && piece.color === userColor) {
             setSelectedSquare(square);
             
-            const moves = chess.moves({ square: square as any, verbose: true });
+            const moves = gameCopy.moves({ square: square as any, verbose: true });
             const newOptions: Record<string, any> = {};
             
             // Highlight source
@@ -232,7 +226,7 @@ export const Board: React.FC<BoardProps> = ({ game, currentUser, onMove, onGameO
             // Highlight destinations
             moves.forEach((move: any) => {
                 newOptions[move.to] = {
-                    background: chess.get(move.to as any) 
+                    background: gameCopy.get(move.to as any) 
                         ? 'radial-gradient(circle, rgba(255,0,0,.5) 25%, transparent 25%)' 
                         : 'radial-gradient(circle, rgba(0,0,0,.5) 25%, transparent 25%)',
                     borderRadius: '50%'
