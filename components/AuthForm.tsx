@@ -35,20 +35,27 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin }) => {
             if (user) {
                 onLogin(user);
             } else {
-                alert("Login failed. If this is your first time, please switch to 'Sign Up' to create the account first.");
+                // This branch is rarely reached now as errors throw
+                alert("Login failed. If this is your first time, please switch to 'Sign Up'.");
             }
         } else {
             // Check if user exists (logic inside store)
             const user = await store.createUser(submitEmail, password, isAdminMode ? UserRole.ADMIN : UserRole.USER);
             if (user) {
-                onLogin(user);
-            } else {
-                alert("Sign up failed. User might already exist.");
+                alert("Account created successfully! Please check your email inbox to confirm your address before logging in.");
+                setIsLogin(true); // Switch to login view
             }
         }
     } catch (e: any) {
         console.error(e);
-        alert("Authentication Error: " + (e.message || "Unknown error"));
+        // SPECIFIC ERROR HANDLING
+        if (e.message && e.message.includes("Email not confirmed")) {
+             alert("⚠️ EMAIL NOT VERIFIED\n\nPlease check your inbox (and spam folder) for the confirmation link from Supabase to activate your account.");
+        } else if (e.message && e.message.includes("Invalid login credentials")) {
+             alert("Invalid email or password. Please try again.");
+        } else {
+             alert("Authentication Error: " + (e.message || "Unknown error"));
+        }
     } finally {
         setLoading(false);
     }

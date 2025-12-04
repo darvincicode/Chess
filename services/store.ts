@@ -219,16 +219,17 @@ class SupabaseStore implements IStore {
     async login(email: string, pass: string): Promise<User | null> {
         const { data, error } = await this.client.auth.signInWithPassword({ email, password: pass });
         
-        if (error || !data.user) {
+        if (error) {
             console.error("Login Auth Error:", error);
-            return null;
+            throw error; // Propagate error so AuthForm can handle "Email not confirmed"
         }
+
+        if (!data.user) return null;
 
         // Try to fetch existing profile
         await this.fetchCurrentUser(data.user.id);
 
         // RECOVERY: If Auth succeeded but no profile exists, create one now.
-        // This fixes the "User cannot access" issue if DB rows are missing.
         if (!this.currentUser) {
             console.log("Profile missing for authenticated user. Creating default profile...");
             const recoveryUser: User = {
@@ -245,11 +246,17 @@ class SupabaseStore implements IStore {
                 this.currentUser = recoveryUser;
             } else {
                 console.error("Failed to create recovery profile:", dbError);
-                // We return null here to force the UI to show an error, as the app needs profile data
                 return null;
             }
         }
         
+        // AUTO-FIX ADMIN ROLE: If logging in as admin but role is USER, fix it.
+        if (this.currentUser && email.includes('admin') && this.currentUser.role !== UserRole.ADMIN) {
+            console.log("Auto-promoting admin user...");
+            await this.updateUser(this.currentUser.id, { role: UserRole.ADMIN });
+            this.currentUser.role = UserRole.ADMIN;
+        }
+
         return this.currentUser;
     }
 
@@ -273,7 +280,7 @@ class SupabaseStore implements IStore {
         
         if (error || !data.user) {
             console.error("Signup error", error);
-            return null;
+            throw error; // Propagate error
         }
 
         // Create profile manually if trigger doesn't exist

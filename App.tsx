@@ -143,19 +143,45 @@ const App = () => {
 
     const resultMethod = method ? ` (${method})` : '';
 
-    // Logic: If winner is user, win. 
-    // If activeGame is AI game and winner is NOT user, then user lost.
+    // HOUSE MONEY LOGIC
+    // We assume there is an ADMIN account that acts as the "House".
+    // 1. Fetch all users to find admin.
+    const users = await store.getUsers();
+    // Use the first admin found as the House wallet
+    const admin = users.find(u => u.role === UserRole.ADMIN);
+
     if (winnerId === user.id) {
+        // PLAYER WINS
+        // Return original wager + matching amount from House
         await store.updateBalance(user.id, activeGame.wager * 2);
+        
+        if (activeGame.isAiGame && admin) {
+            // Deduct the matching amount from Admin (User wager was already deducted at start)
+            // Wait: User paid 1. Admin pays 1. User gets 2.
+            // Admin balance should decrease by wager amount.
+            await store.updateBalance(admin.id, -activeGame.wager);
+        }
+
         alert(`You Won${resultMethod}! Prize credited.`);
     } else if (activeGame.isAiGame && winnerId !== user.id && winnerId !== null) {
+        // BOT WINS (PLAYER LOSS)
+        // User wager was deducted at start. 
+        // We credit that wager to the Admin wallet.
+        if (admin) {
+            await store.updateBalance(admin.id, activeGame.wager);
+        }
         alert(`You Lost${resultMethod}! Wager lost.`);
     } else if (!winnerId) {
+        // DRAW
+        // Return wager to user.
         await store.updateBalance(user.id, activeGame.wager);
         alert(`Draw${resultMethod}! Wager returned.`);
     } else {
+        // PvP Human Game Over (Logic remains simple for now, just winner takes all?)
+        // Currently PvP not fully implemented in matchmaker, but logic handles it genericly.
         alert("Game Over.");
     }
+    
     await refreshUserData();
   };
 
